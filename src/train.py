@@ -159,7 +159,7 @@ def load_emb(name, layer=None):
     """Return (X_train in label order, X_test in test order) for cache/emb_<name>.npz."""
     train, test = load_labels()
     z = np.load(CACHE / f"emb_{name}.npz", allow_pickle=True)
-    X = z["X"] if layer is None else z["X"][:, layer]
+    X = (z["X"] if layer is None else z["X"][:, layer]).astype(np.float32)
     key = pd.Series(range(len(X)), index=[f"{s}/{f}" for s, f in zip(z["split"], z["filename"])])
     itr = key[["train/" + f for f in train.filename]].values
     ite = key[["test/" + f for f in test.filename]].values

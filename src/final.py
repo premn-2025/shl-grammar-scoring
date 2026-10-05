@@ -31,6 +31,11 @@ from ensemble import blend  # noqa: E402
 
 FT_TAG = "ft_roberta-base-CoLA_e4"
 FT_SEEDS = [0, 1, 2]
+# Optional extra components (saved by other scripts) and output name, e.g.
+#   python src/final.py --extra attnpool_wavlmL --out final_v2
+_a = sys.argv[1:]
+EXTRA = _a[_a.index("--extra") + 1].split(",") if "--extra" in _a else []
+OUT = _a[_a.index("--out") + 1] if "--out" in _a else "final"
 
 
 def design_matrices():
@@ -61,7 +66,7 @@ def build_components():
     test = np.mean([p["test"] for p in P], 0)
     np.savez(T.PREDS / "ft_roberta.npz", oof=oof, test=test, y=y)
     print(f"ft_roberta (seeds {seeds})", T.metrics(oof, y))
-    names = ["svr_all", "svr_wavlm_large", "ridge_deb_hand_dz", "ft_roberta"]
+    names = ["svr_all", "svr_wavlm_large", "ridge_deb_hand_dz", "ft_roberta"] + EXTRA
     return y, comps, names, seeds
 
 
@@ -85,6 +90,8 @@ def training_rmse(y, comps, names, w, coef, seeds):
         print("!! no full-train fine-tune predictions; run FT_FULL=1 finetune_text.py first")
         return None
     ins["ft_roberta"] = np.mean([np.load(f) for f in ft], 0)
+    for name in EXTRA:  # extra neural components save their own full-train predictions
+        ins[name] = np.load(T.PREDS / f"{name}_fulltrain.npy")
     P = np.column_stack([ins[n] for n in names])
     return np.clip(np.polyval(coef, np.clip(P @ w, T.LO, T.HI)), T.LO, T.HI)
 
@@ -112,9 +119,9 @@ def main():
         np.save(T.PREDS / "final_insample.npy", ins)
         print("TRAINING (in-sample) ", {k: round(v, 4) for k, v in report["train_insample"].items()})
 
-    np.savez(T.PREDS / "final.npz", oof=oof_final_cv, test=test_final, y=y)
-    (T.CACHE / "final_report.json").write_text(json.dumps(report, indent=2, default=float))
-    T.write_submission("final", test_final)
+    np.savez(T.PREDS / f"{OUT}.npz", oof=oof_final_cv, test=test_final, y=y)
+    (T.CACHE / f"{OUT}_report.json").write_text(json.dumps(report, indent=2, default=float))
+    T.write_submission(OUT, test_final)
     print("test prediction mean/std:", test_final.mean().round(3), test_final.std().round(3))
 
 

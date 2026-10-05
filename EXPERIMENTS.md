@@ -27,6 +27,8 @@ All CV numbers: 5-fold StratifiedKFold (seed 42), out-of-fold (OOF).
 | 2026-10-05 | — | Fine-tuned RoBERTa-CoLA, mean of 3 seeds, `_dz` | 0.684 | 0.782 | 1.008 | |
 | 2026-10-05 | **final** | `src/final.py`: blend (svr_all .518, WavLM-L .335, ridge text .005, ft-RoBERTa .142) + stretch (slope 1.092) | **0.4705** | **0.886** | 0.504 | **0.3529** |
 
+| 2026-10-05 | v2 | final + attention-pooling WavLM-large (option 2, 1 seed; alone 0.563, blend weight .066) | 0.4694 | 0.886 | 0.501 | **0.3507** |
+
 Final model training (in-sample) RMSE: 0.101 (non-zero) / 0.118 (all).
 
 Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_wavlmlarge_L18-23`,
@@ -56,3 +58,4 @@ Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_w
   The public LB is lower than CV (0.471). Relative to the constant baseline the test looks easier
   (0.353/1.005 = 0.35 vs CV 0.471/1.027 = 0.46), and the public split is small, so LB moves are
   noisy — keep choosing models by CV.
+- **v2 LB 0.3507** (v1 0.3529). Public LB = ~60% of test (~130 clips); private = other 40%. v1/v2 test predictions differ by only 0.018 RMS, so the gain is within noise.

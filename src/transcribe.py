@@ -93,6 +93,34 @@ def transcribe_one(model, path, decoded=None):
     }
 
 
+def clean_pass():
+    """Second transcription WITHOUT the disfluent prompt -> cache/transcripts_clean.csv.
+    Unprompted, Whisper behaves like a copy-editor: it drops fillers and repetitions and
+    often 'fixes' grammar. Comparing it with the verbatim pass (whisper_diff.py) therefore
+    measures how much had to be fixed. Loop guard on (temperature fallback, no conditioning).
+    Resumable."""
+    out = ROOT / "cache" / "transcripts_clean.csv"
+    clips = pd.concat([pd.read_csv(DATA / f"{s}.csv").assign(split=s)
+                       for s in ("train", "test")])[["filename", "split"]]
+    done = set()
+    if out.exists():
+        d = pd.read_csv(out)
+        done = set(d.split + "/" + d.filename)
+    clips = clips[~(clips.split + "/" + clips.filename).isin(done)]
+    print(f"{len(done)} done, {len(clips)} to go")
+    if clips.empty:
+        return
+    model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+    for r in tqdm(clips.itertuples(), total=len(clips)):
+        segments, _ = model.transcribe(
+            str(DATA / r.split / r.filename), language="en", beam_size=5, vad_filter=False,
+            condition_on_previous_text=False, compression_ratio_threshold=2.4,
+            temperature=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+        text = " ".join(s.text.strip() for s in segments)
+        pd.DataFrame([{"filename": r.filename, "split": r.split, "text": text}]).to_csv(
+            out, mode="a", header=not out.exists(), index=False)
+
+
 def flag_loops():
     """Write cache/redo_loops.csv: clips whose transcript looks like a repetition loop.
     Same rule for train and test: gzip compression ratio > 2.4 (Whisper's own threshold) or
@@ -159,7 +187,9 @@ def main():
 
 
 if __name__ == "__main__":
-    if "--flag-loops" in sys.argv:
+    if "--clean" in sys.argv:
+        clean_pass()
+    elif "--flag-loops" in sys.argv:
         flag_loops()
     elif "--redo-loops" in sys.argv:
         redo_loops()

@@ -1,4 +1,4 @@
-﻿"""Step 4+: cross-validated models. Every model goes through the same `run_cv`, which
+"""Step 4+: cross-validated models. Every model goes through the same `run_cv`, which
  - uses 5-fold StratifiedKFold on the rounded label (seed 42), so each fold sees the full
    label range (including the rare 0.0 and 1.x clips);
  - fits ALL preprocessing (scaling, alpha/C tuning) inside the training folds only;
@@ -229,7 +229,69 @@ def audio_variants(name, layers):
         run_cv(f"svr_{tag}_meanstd", svr, mstr, y, mste, drop_zero=dz)
 
 
+# ---------------------------------------------------------------- overnight extras
+def cv_and_full(name, make, Xtr, y, Xte, fit_kw=None, drop_zero=False):
+    """run_cv + one model refit on the full training set, whose in-sample predictions are
+    saved as <name>_fulltrain.npy (needed for the final training-RMSE report)."""
+    res, _, _ = run_cv(name, make, Xtr, y, Xte, fit_kw, drop_zero=drop_zero)
+    idx = np.where(y > 0)[0] if drop_zero else np.arange(len(y))
+    m = make()
+    m.fit(Xtr[idx], y[idx], **(fit_kw(Xtr[idx], y[idx], Xtr[idx], y[idx]) if fit_kw else {}))
+    np.save(PREDS / f"{res['model']}_fulltrain.npy", np.clip(m.predict(Xtr), LO, HI))
+    return res
+
+
+def extra_feature_block():
+    """Diff features (verbatim vs clean Whisper) and LLM-judge features, when available."""
+    train, test = load_labels()
+    blocks_tr, blocks_te, used = [], [], []
+    p = CACHE / "features_diff.csv"
+    if p.exists():
+        f = pd.read_csv(p)
+        cols = [c for c in f.columns if c.startswith("diff_")]
+        blocks_tr.append(train[["filename"]].merge(f[f.split == "train"], how="left")[cols].fillna(0).values)
+        blocks_te.append(test[["filename"]].merge(f[f.split == "test"], how="left")[cols].fillna(0).values)
+        used.append("diff")
+    if (CACHE / "emb_llm.npz").exists():
+        a, b = load_emb("llm")
+        blocks_tr.append(a); blocks_te.append(b); used.append("llm")
+    if not used:
+        return None
+    return np.hstack(blocks_tr), np.hstack(blocks_te), used
+
+
+def main_extra():
+    """New components using the overnight features. Returns the names created."""
+    train, _ = load_labels()
+    y = train.label.values
+    ex = extra_feature_block()
+    if ex is None:
+        print("no extra features available")
+        return []
+    Xtr_x, Xte_x, used = ex
+    print("extra feature blocks:", used)
+    Htr, Hte, _ = hand_features()
+    c = load_emb("cola")
+    H = (np.hstack([Htr.values, c[0], Xtr_x]), np.hstack([Hte.values, c[1], Xte_x]))
+    D = load_emb("deberta")
+    _, W = audio_pool("wavlm_large", list(range(18, 24)))
+    E = load_emb("whisper_enc")
+    names = []
+    if "llm" in used:
+        L = load_emb("llm")
+        names.append(cv_and_full("ridge_llm", ridge, L[0], y, L[1], drop_zero=True)["model"])
+    names.append(cv_and_full("lgbm_handx", lgbm, H[0], y, H[1], lgbm_es, drop_zero=True)["model"])
+    names.append(cv_and_full("ridge_deb_handx", ridge, np.hstack([D[0], H[0]]), y,
+                             np.hstack([D[1], H[1]]), drop_zero=True)["model"])
+    names.append(cv_and_full("svr_allx", svr, np.hstack([W[0], E[0], D[0], H[0]]), y,
+                             np.hstack([W[1], E[1], D[1], H[1]]))["model"])
+    return names
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "extra":
+        main_extra()
+        sys.exit()
     cmd = sys.argv[1] if len(sys.argv) > 1 else "hand"
     if cmd == "wavlm_scan":
         wavlm_layer_scan(sys.argv[2] if len(sys.argv) > 2 else "wavlm")

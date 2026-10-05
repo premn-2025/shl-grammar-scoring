@@ -31,11 +31,13 @@ from frames import frame_path  # noqa: E402
 from train import LO, HI, N_FOLDS, PREDS, SEED, load_labels, metrics, strat_bins  # noqa: E402
 from sklearn.model_selection import StratifiedKFold  # noqa: E402
 
+import os  # noqa: E402
 DEV = "cuda"
-NAME = "ft_wavlmL_top8"
 FIRST = 16                 # cached hidden state index = input of encoder.layers[16]
-EPOCHS, BS, CROP = 6, 4, 750
-LR_ENC, LR_HEAD, WD = 2e-5, 1e-3, 1e-2
+# Schedule can be overridden (FA_EPOCHS, FA_LR) for the longer-training variant.
+EPOCHS, BS, CROP = int(os.environ.get("FA_EPOCHS", 6)), 4, 750
+LR_ENC, LR_HEAD, WD = float(os.environ.get("FA_LR", 2e-5)), 1e-3, 1e-2
+NAME = "ft_wavlmL_top8" + ("" if (EPOCHS, LR_ENC) == (6, 2e-5) else f"_e{EPOCHS}_lr{LR_ENC:g}")
 CHUNK_FRAMES = 999         # frames produced by one 20 s chunk (see frames.py)
 
 
@@ -159,6 +161,7 @@ def main(seeds):
                  test=np.clip(tp[si], LO, HI), y=y)
         full = fit(names, y, SEED + 1000 * seed + 99)   # for the training-RMSE report
         ins[si] = predict(full, "train", names)
+        np.save(PREDS / f"{NAME}_s{seed}_fulltrain.npy", np.clip(ins[si], LO, HI))
         del full
         torch.cuda.empty_cache()
     o, t = np.clip(oof.mean(0), LO, HI), np.clip(tp.mean(0), LO, HI)

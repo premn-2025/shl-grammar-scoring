@@ -29,6 +29,7 @@ All CV numbers: 5-fold StratifiedKFold (seed 42), out-of-fold (OOF).
 
 | 2026-10-05 | v2 | final + attention-pooling WavLM-large (option 2, 1 seed; alone 0.563, blend weight .066) | 0.4694 | 0.886 | 0.501 | **0.3507** |
 
+| 2026-10-05 | stack | Duration-aware Ridge stack (5 components + duration/wpm/word-prob + pred x duration, duration clamped to 20-61 s) | 0.4674 (nested) | - | - | **0.3440** |
 Final model training (in-sample) RMSE: 0.101 (non-zero) / 0.118 (all).
 
 Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_wavlmlarge_L18-23`,
@@ -59,3 +60,6 @@ Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_w
   (0.353/1.005 = 0.35 vs CV 0.471/1.027 = 0.46), and the public split is small, so LB moves are
   noisy — keep choosing models by CV.
 - **v2 LB 0.3507** (v1 0.3529). Public LB = ~60% of test (~130 clips); private = other 40%. v1/v2 test predictions differ by only 0.018 RMS, so the gain is within noise.
+- **2026-10-05 late: ideas tried.** Clip to [1,5]: no-op (min test pred 1.83). Crop augmentation + TTA: 0.522 alone, no blend gain. Nested SVR tuning: worse (audio SVR 0.526 vs 0.517 default; per-fold choices unstable). Duration-aware stacking: nested 0.4674 vs 0.4713, and 0.518 vs 0.525 on short (<50 s, test-like) clips -> **LB 0.3440** (from 0.3507).
+- Why duration matters: 40-50 s train clips have mean label 3.06 vs 3.58 for 60 s clips, and 141/216 test clips are 40-50 s. Predictions are calibrated (true-on-pred slope 1.01-1.04 in every duration bin), so no extra stretch.
+- Public-LB noise: ~130 clips at RMSE ~0.35 -> roughly +/-0.02 standard error.

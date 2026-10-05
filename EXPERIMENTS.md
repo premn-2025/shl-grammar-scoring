@@ -24,6 +24,13 @@ All CV numbers: 5-fold StratifiedKFold (seed 42), out-of-fold (OOF).
 | 2026-10-05 | — | Blend svr_all + WavLM-L + text models | 0.482 | 0.884 | — | |
 | 2026-10-05 | — | ... + linear stretch (inner-CV estimate) | 0.474 | — | — | |
 | 2026-10-05 | — | Blend svr_all + WavLM-L + ft-RoBERTa(s0) | 0.476 | 0.886 | — | |
+| 2026-10-05 | — | Fine-tuned RoBERTa-CoLA, mean of 3 seeds, `_dz` | 0.684 | 0.782 | 1.008 | |
+| 2026-10-05 | **final** | `src/final.py`: blend (svr_all .518, WavLM-L .335, ridge text .005, ft-RoBERTa .142) + stretch (slope 1.092) | **0.4705** | **0.886** | 0.504 | |
+
+Final model training (in-sample) RMSE: 0.101 (non-zero) / 0.118 (all).
+
+Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_wavlmlarge_L18-23`,
+`04_blend_audio`, `final`.
 
 \* approximate (recomputed under the non-zero metric later).
 

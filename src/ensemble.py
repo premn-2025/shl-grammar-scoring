@@ -40,6 +40,28 @@ def blend(names, verbose=True):
     return w, b, np.clip(test @ w, LO, HI)
 
 
+def nested_blend_rmse(names, n_splits=5, seed=42):
+    """Honest estimate of the whole post-processing (blend weights + linear stretch): both are
+    fitted on 4/5 of the non-zero clips' OOF predictions and scored on the held-out 1/5.
+    Guards against the blend itself overfitting when many components are offered."""
+    from sklearn.model_selection import KFold
+    P = [np.load(PREDS / f"{n}.npz") for n in names]
+    y = P[0]["y"]
+    nz = np.where(y > 0)[0]
+    oof = np.column_stack([p["oof"] for p in P])[nz]
+    yy = y[nz]
+    out = np.zeros(len(nz))
+    k = len(names)
+    for tr, va in KFold(n_splits, shuffle=True, random_state=seed).split(oof):
+        res = minimize(lambda w: rmse(oof[tr] @ w, yy[tr]), np.full(k, 1 / k), method="SLSQP",
+                       bounds=[(0, 1)] * k,
+                       constraints={"type": "eq", "fun": lambda w: w.sum() - 1})
+        b_tr = np.clip(oof[tr] @ res.x, LO, HI)
+        coef = np.polyfit(b_tr, yy[tr], 1)
+        out[va] = np.clip(np.polyval(coef, np.clip(oof[va] @ res.x, LO, HI)), LO, HI)
+    return rmse(out, yy)
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     out = None

@@ -83,7 +83,9 @@ def training_rmse(y, comps, names, w, coef, seeds):
     for name, (make, (Xtr, _), dz) in comps.items():
         idx = np.where(y > 0)[0] if dz else np.arange(len(y))
         m = make().fit(Xtr[idx], y[idx])
-        ins[name + ("_dz" if dz else "")] = np.clip(m.predict(Xtr), T.LO, T.HI)
+        key = name + ("_dz" if dz else "")
+        ins[key] = np.clip(m.predict(Xtr), T.LO, T.HI)
+        np.save(T.PREDS / f"{key}_fulltrain.npy", ins[key])  # for the over/underfit table
     ft = [T.PREDS / f"{FT_TAG}_s{s}_fulltrain.npy" for s in seeds]
     ft = [f for f in ft if f.exists()]
     if not ft:

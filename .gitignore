@@ -1,0 +1,32 @@
+# Competition data must not be shared publicly (competition rules)
+data/
+*.wav
+*.zip
+
+# Derived artefacts: transcripts/features/embeddings contain competition content
+cache/
+*.npy
+*.npz
+*.parquet
+
+# Submissions contain test predictions
+submissions/
+
+# Model files
+*.pkl
+*.joblib
+*.pt
+*.bin
+*.safetensors
+models/
+
+# Python / Jupyter / IDE
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+.vscode/
+.idea/
+.env
+kaggle.json

@@ -1,0 +1,28 @@
+# Python 3.11. torch is installed separately with CUDA (see README):
+#   pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu118
+numpy==1.26.4
+pandas==2.2.0
+scipy==1.17.1
+scikit-learn==1.4.0
+lightgbm==4.7.0
+matplotlib==3.8.2
+tqdm==4.67.3
+soundfile==0.14.0
+
+# ASR (CTranslate2 backend needs CUDA 12 cuBLAS + cuDNN 9, provided by these wheels)
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cudnn-cu12==9.27.0.42
+
+# Text features / models
+language_tool_python==3.4.0   # needs Java >= 17
+spacy==3.8.16                 # + python -m spacy download en_core_web_sm
+transformers==5.17.0
+sentencepiece==0.2.2
+sentence-transformers==6.1.0
+
+# Notebook
+nbformat==5.11.1
+ipykernel==7.1.0
+kaggle==2.2.4

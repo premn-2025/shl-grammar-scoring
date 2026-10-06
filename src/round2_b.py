@@ -133,8 +133,21 @@ def evaluate(path, tag):
               f"{tag}: features as stacker meta-features")
 
 
+def component():
+    """Final-model component `ridge_r2w_dz`: Ridge on the round-2 features, each winsorised to
+    the TRAINING 1st-99th percentile (test clips cannot push the linear model into
+    extrapolation), trained without the 0.0 clips."""
+    train, _ = T.load_labels()
+    y = train.label.values
+    a, b, _ = block(OUT)
+    lo, hi = np.percentile(a, 1, axis=0), np.percentile(a, 99, axis=0)
+    T.cv_and_full("ridge_r2w", T.ridge, np.clip(a, lo, hi), y, np.clip(b, lo, hi), drop_zero=True)
+
+
 if __name__ == "__main__":
     if not OUT.exists():
         build()
     if "--eval" in sys.argv:
         evaluate(OUT, "r2")
+    if "--component" in sys.argv:
+        component()

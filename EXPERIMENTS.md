@@ -98,3 +98,8 @@ Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_w
 - **Leak checks (src/round2_check.py):** gain holds under prompt-held-out CV (+0.0105, 8/8) and speaker-grouped CV (+0.0156, 8/8). Mostly from prosody (pitch/energy), sub-groups add up.
 - **Drift:** energy/pause features shift by 0.3-0.4 SD on test (quieter, fewer pauses); 8 test clips had a feature beyond 4 SD. Fix: winsorise every feature to the TRAIN 1st-99th percentiles (67 of 2808 test values clipped). Gains: random +0.0082, prompt-held-out +0.0081, speaker-grouped +0.0135, all 8/8.
 - **Candidate inal_stack_pw.csv** = final_stack_w components + ridge_r2w_dz: nested 0.4611 / short 0.4973 (final_stack_w 0.4637 / 0.5052), train RMSE 0.138; test preds differ by 0.059 RMS.
+- New baseline (final_stack_pw components) over the 8 splits: short 0.5004 +/- 0.0026.
+- **C1 prompt-frequency stack features** (log count of training clips in the prompt cluster, rare flag; label-free): 0.5033, 0/8 -> reject.
+- **C2 KNN on text features** (DeBERTa + hand + CoLA, out-of-fold): 0.666 alone; random-split stack 0.5022 (1/8) but prompt-held-out +0.0045 (8/8) -> mixed, reject under the rule.
+- **C mid-fusion MLP** (PCA'd WavLM + DeBERTa + hand/round-2 features -> 32 -> 8 -> 1, dropout, 3 seeds): 0.639 alone; stack 0.5005 (3/8) -> reject.
+- python src/round2_b.py --component rebuilds ridge_r2w_dz exactly.

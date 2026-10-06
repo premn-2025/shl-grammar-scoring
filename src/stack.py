@@ -54,7 +54,15 @@ def main(names, out):
     Xte = design(np.column_stack([z["test"] for z in Z]), meta_frame("test"))
 
     nested = np.zeros(len(nz))
-    for a, b in KFold(5, shuffle=True, random_state=T.SEED).split(nz):
+    if T.CV_MODE == "group":   # hold out whole prompts in the stacker's own check too
+        from sklearn.model_selection import GroupKFold
+        p = pd.read_csv(T.CACHE / "prompts.csv")
+        train, _ = T.load_labels()
+        groups = train[["filename"]].merge(p[p.split == "train"], how="left").prompt.values[nz]
+        splits = GroupKFold(5).split(nz, groups=groups)
+    else:
+        splits = KFold(5, shuffle=True, random_state=T.SEED).split(nz)
+    for a, b in splits:
         nested[b] = np.clip(ridge().fit(Xtr[nz][a], y[nz][a]).predict(Xtr[nz][b]), T.LO, T.HI)
     short = meta_frame("train")[nz, 0] < 50
     res = {"nested_rmse_nz": T.rmse(nested, y[nz]),

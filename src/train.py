@@ -24,7 +24,11 @@ from sklearn.preprocessing import StandardScaler
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "cache"
-PREDS = CACHE / "preds"
+import os  # noqa: E402
+# CV_MODE=group -> prompt-held-out folds (see get_splits); predictions go to a separate folder
+# so the two evaluation schemes never overwrite each other.
+CV_MODE = os.environ.get("CV_MODE", "random")
+PREDS = CACHE / ("preds_g" if CV_MODE == "group" else "preds")
 SUBS = ROOT / "submissions"
 SEED, N_FOLDS = 42, 5
 LO, HI = 0.0, 5.0  # competition score range
@@ -48,6 +52,24 @@ def strat_bins(y):
     return b
 
 
+def get_splits(y):
+    """The 5 outer folds used by EVERY model.
+    random: StratifiedKFold on the rounded label (prompts mixed across folds).
+    group : StratifiedGroupKFold, grouped by prompt cluster (cache/prompts.csv: KMeans on
+            transcript embeddings, labels never used). Each validation fold contains only
+            prompts unseen in training - like the test set, where about half the clips answer
+            prompts that are rare or absent in train."""
+    if CV_MODE == "group":
+        from sklearn.model_selection import StratifiedGroupKFold
+        train, _ = load_labels()
+        p = pd.read_csv(CACHE / "prompts.csv")
+        groups = train[["filename"]].merge(p[p.split == "train"], how="left").prompt.values
+        sgk = StratifiedGroupKFold(N_FOLDS, shuffle=True, random_state=SEED)
+        return list(sgk.split(np.zeros(len(y)), strat_bins(y), groups))
+    skf = StratifiedKFold(N_FOLDS, shuffle=True, random_state=SEED)
+    return list(skf.split(np.zeros(len(y)), strat_bins(y)))
+
+
 def rmse(a, b):
     return float(np.sqrt(np.mean((np.asarray(a) - np.asarray(b)) ** 2)))
 
@@ -69,8 +91,7 @@ def run_cv(name, make_model, X, y, X_test, fit_kw=None, verbose=True, drop_zero=
         name += "_dz"
     oof = np.zeros(len(y))
     test_pred = np.zeros(len(X_test))
-    skf = StratifiedKFold(N_FOLDS, shuffle=True, random_state=SEED)
-    for tr, va in skf.split(X, strat_bins(y)):
+    for tr, va in get_splits(y):
         if drop_zero:
             tr = tr[y[tr] > 0]
         m = make_model()

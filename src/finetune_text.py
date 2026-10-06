@@ -24,7 +24,7 @@ from torch import nn
 from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warmup
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from train import (CACHE, LO, HI, N_FOLDS, PREDS, SEED, load_labels, metrics,  # noqa
+from train import (CACHE, LO, HI, N_FOLDS, PREDS, SEED, get_splits, load_labels, metrics,  # noqa
                    rmse, strat_bins)
 
 DEV = "cuda"
@@ -123,8 +123,7 @@ def main():
         return full_fit(enc_tr, y)
 
     oof, test_pred = np.zeros(len(y)), np.zeros(len(texts_te))
-    skf = StratifiedKFold(N_FOLDS, shuffle=True, random_state=SEED)
-    for fold, (tri, vai) in enumerate(skf.split(texts_tr, strat_bins(y))):
+    for fold, (tri, vai) in enumerate(get_splits(y)):
         if fold >= MAX_FOLDS:
             break
         # Text models never see the label-0.0 batch: its transcripts read like normal 2-3

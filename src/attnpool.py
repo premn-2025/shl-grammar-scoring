@@ -23,7 +23,7 @@ from torch import nn
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from frames import frame_path  # noqa: E402
-from train import LO, HI, N_FOLDS, PREDS, SEED, load_labels, metrics, strat_bins  # noqa: E402
+from train import LO, HI, N_FOLDS, PREDS, SEED, get_splits, load_labels, metrics, strat_bins  # noqa: E402
 from sklearn.model_selection import StratifiedKFold  # noqa: E402
 
 DEV = "cuda"
@@ -109,9 +109,8 @@ def main(seeds):
     oof = np.zeros((len(seeds), len(y)))
     tp = np.zeros((len(seeds), len(tnames)))
     ins = np.zeros((len(seeds), len(y)))
-    skf = StratifiedKFold(N_FOLDS, shuffle=True, random_state=SEED)
     for si, seed in enumerate(seeds):
-        for fold, (tr, va) in enumerate(skf.split(names, strat_bins(y))):
+        for fold, (tr, va) in enumerate(get_splits(y)):
             model = fit(names[tr], y[tr], SEED + 1000 * seed + fold)
             oof[si, va] = predict(model, "train", names[va])
             tp[si] += predict(model, "test", tnames) / N_FOLDS

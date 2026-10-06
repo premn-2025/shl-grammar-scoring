@@ -95,12 +95,12 @@ def cola(suffix="", crop_s=None):
 def wavlm(model_name="microsoft/wavlm-base-plus", out_name="wavlm"):
     """Saves emb_<out_name>.npz (mean pooled, N x L x D) and emb_<out_name>_std.npz (std)."""
     import soundfile as sf
-    from transformers import AutoFeatureExtractor, WavLMModel
+    from transformers import AutoFeatureExtractor, AutoModel
     # Ordering from the CSVs (not transcripts) so this can run while Whisper is still going.
     tr = pd.concat([pd.read_csv(ROOT / "data" / f"{s}.csv").assign(split=s)
                     for s in ("train", "test")])[["filename", "split"]]
     fe = AutoFeatureExtractor.from_pretrained(model_name)
-    m = WavLMModel.from_pretrained(model_name).to(DEV).eval().half()
+    m = AutoModel.from_pretrained(model_name).to(DEV).eval().half()  # WavLM, HuBERT, ...
     chunk = 20 * 16000
     means, stds = [], []
     for r in tqdm(tr.itertuples(), total=len(tr)):
@@ -131,6 +131,8 @@ if __name__ == "__main__":
         wavlm()
     elif what == "wavlm_large":
         wavlm("microsoft/wavlm-large", "wavlm_large")
+    elif what == "hubert_large":   # self-supervised only (not ASR fine-tuned)
+        wavlm("facebook/hubert-large-ll60k", "hubert_large")
     else:
         fn = {"mpnet": mpnet, "deberta": deberta, "cola": cola}[what]
         fn(suffix="_crop45" if crop else "", crop_s=45 if crop else None)

@@ -81,3 +81,10 @@ Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_w
 - **EXP3 error types** (LanguageTool rule IDs -> top-25 rules + groups: tense/verb-form r=-0.18, agreement -0.18, article -0.13, plural -0.11, pronoun -0.10): in svr_all 0.5087, in text Ridge 0.5079, as own component 0.5094 -> no gain.
 - **EXP4 ordinal regression** (8 cumulative logistic classifiers P(y>=k), k=1.5..5, on PCA-128 of joint features): alone 0.530; in stack 0.5085 -> no gain.
 - Conclusion: final_stack_w (LB 0.3432) stays. Remaining gap is within public-LB noise.
+## 2026-10-06 - final round (paired rule: same 8 stacker splits as baseline; keep only if wins >= 6/8 AND mean gain > sd of differences)
+- **Baseline** final_stack_w per split (short): 0.5052 0.5075 0.5152 0.5061 0.5114 0.5079 0.5067 0.5089 -> 0.5086 +/- 0.0031 (all 0.4652).
+- **1. Repeated-CV bagging** (SVR/Ridge components over fold seeds 42,1,2,3,4; OOF averaged, test = 25 fold models): 0/8 wins (short 0.5128). Caveat: seed 42 was the luckiest split for the audio SVRs (WavLM-L 0.517 vs 0.528-0.543 on seeds 1-4), so the baseline CV is ~0.004 optimistic and CV cannot judge bagging fairly. Bagged test preds differ from final_stack_w by only 0.009 RMS (max 0.037) -> below LB noise, not submitted. Confirms the submission is stable, not a split fluke.
+- **2. HuBERT-large** (facebook/hubert-large-ll60k): layer scan peaks upper-middle (best L21 0.559). SVR L16-21 0.5335 alone; joint SVR with HuBERT 0.4865 (vs 0.4906). Stack: +component 5/8 wins (+0.0010, sd 0.0014), in joint SVR 7/8 (+0.0002, sd 0.0002), both 5/8 -> reject.
+- **3a. Transductive scaling** (standardise on train+test features, no labels; no per-fold scaler): all variants within +/-0.0002 -> reject.
+- **3b. Leak-free pseudo-labelling** (per fold: fit, pseudo-label test, refit with weight 0.5): joint SVR 0.4911; stack 0/8 and 1/8 wins -> reject.
+- **Outcome:** final_stack_w (LB 0.3432) is final. 0 of 3 allowed LB submissions used this round.

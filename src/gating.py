@@ -64,6 +64,37 @@ def evaluate(design_fn, names=BASE, label=""):
     return r.mean(0)
 
 
+def per_split(names=BASE, design_fn=None, folder=None):
+    """Short-clip and all-clip RMSE of the stacker for each of the 8 SPLITS (paired design)."""
+    design_fn = design_fn or base_design
+    train, _ = T.load_labels()
+    y = train.label.values
+    nz = np.where(y > 0)[0]
+    short = S.meta_frame("train")[nz, 0] < 50
+    X = design_fn(preds(names, folder=folder), "train")[nz]
+    yy = y[nz]
+    out = []
+    for seed in SPLITS:
+        o = np.zeros(len(nz))
+        for a, b in KFold(5, shuffle=True, random_state=seed).split(nz):
+            o[b] = np.clip(S.ridge().fit(X[a], yy[a]).predict(X[b]), 0, 5)
+        out.append((T.rmse(o[short], yy[short]), T.rmse(o, yy)))
+    return np.array(out)          # (8, 2): [short, all]
+
+
+def compare(cand, base=None, label=""):
+    """Paired per-split comparison on SHORT clips (the LB compass).
+    Keep rule: wins on >= 6 of 8 splits AND mean gain > std of the per-split differences."""
+    base = per_split() if base is None else base
+    d = base[:, 0] - cand[:, 0]            # positive = candidate better
+    wins = int((d > 0).sum())
+    keep = wins >= 6 and d.mean() > d.std()
+    print(f"{label:42s} short {cand[:, 0].mean():.4f} vs {base[:, 0].mean():.4f} | gain {d.mean():+.4f} "
+          f"(sd {d.std():.4f}) wins {wins}/8 | all {cand[:, 1].mean():.4f} -> {'KEEP' if keep else 'reject'}",
+          flush=True)
+    return keep
+
+
 def base_design(P, split):
     return S.design(P, S.meta_frame(split))
 

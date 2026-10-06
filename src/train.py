@@ -28,7 +28,7 @@ import os  # noqa: E402
 # CV_MODE=group -> prompt-held-out folds (see get_splits); predictions go to a separate folder
 # so the two evaluation schemes never overwrite each other.
 CV_MODE = os.environ.get("CV_MODE", "random")
-PREDS = CACHE / ("preds_g" if CV_MODE == "group" else "preds")
+PREDS = CACHE / {"group": "preds_g", "speaker": "preds_s"}.get(CV_MODE, "preds")
 SUBS = ROOT / "submissions"
 SEED, N_FOLDS = 42, 5
 LO, HI = 0.0, 5.0  # competition score range
@@ -59,6 +59,16 @@ def get_splits(y):
             transcript embeddings, labels never used). Each validation fold contains only
             prompts unseen in training - like the test set, where about half the clips answer
             prompts that are rare or absent in train."""
+    if CV_MODE == "speaker":
+        # Speaker-grouped folds. cache/speakers.csv: connected components of clips whose
+        # low-layer WavLM voice embeddings have cosine similarity > 0.85 (labels unused).
+        # Within train, ~30% of clips share a voice with another clip and their labels agree
+        # closely; test speakers never appear in train, so mixing them across folds leaks.
+        from sklearn.model_selection import StratifiedGroupKFold
+        train, _ = load_labels()
+        g = train[["filename"]].merge(pd.read_csv(CACHE / "speakers.csv"), how="left").speaker.values
+        sgk = StratifiedGroupKFold(N_FOLDS, shuffle=True, random_state=SEED)
+        return list(sgk.split(np.zeros(len(y)), strat_bins(y), g))
     if CV_MODE == "group":
         from sklearn.model_selection import StratifiedGroupKFold
         train, _ = load_labels()

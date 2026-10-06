@@ -103,3 +103,5 @@ Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_w
 - **C2 KNN on text features** (DeBERTa + hand + CoLA, out-of-fold): 0.666 alone; random-split stack 0.5022 (1/8) but prompt-held-out +0.0045 (8/8) -> mixed, reject under the rule.
 - **C mid-fusion MLP** (PCA'd WavLM + DeBERTa + hand/round-2 features -> 32 -> 8 -> 1, dropout, 3 seeds): 0.639 alone; stack 0.5005 (3/8) -> reject.
 - python src/round2_b.py --component rebuilds ridge_r2w_dz exactly.
+- **B2 Whisper decoder entropy** (src/whisper_entropy.py; HF whisper-large-v3 greedy decode per 30 s window, per-token entropy): ent_mean r=-0.515, top1_mean r=+0.531 (as strong as Whisper word confidence, r=0.52). E1 own component: random 0.5009 (2/8), prompt-held-out -0.0019, speaker -0.0015 -> reject (redundant with ASR-confidence features + Whisper embeddings). E2 merged into the prosody Ridge: -0.0072 / -0.0054 / -0.0090 -> reject (it makes the prosody component less complementary).
+- **Round-2 outcome:** one component kept (ridge_r2w_dz) -> final_stack_pw is the new primary candidate.

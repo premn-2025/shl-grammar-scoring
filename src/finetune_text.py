@@ -31,8 +31,11 @@ DEV = "cuda"
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "microsoft/deberta-v3-base"
 EPOCHS = int(sys.argv[2]) if len(sys.argv) > 2 else 4
 RUN_SEED = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-MAX_LEN, BS, LR = 256, 8, 2e-5
 import os  # noqa: E402
+# Batch size / learning rate can be overridden for large models (FT_BS=4, FT_LR=1e-5 fit 8 GB).
+MAX_LEN = 256
+BS = int(os.environ.get("FT_BS", 8))
+LR = float(os.environ.get("FT_LR", 2e-5))
 AMP = os.environ.get("FT_FP32") != "1"           # bf16 autocast unless FT_FP32=1
 MAX_FOLDS = int(os.environ.get("FT_FOLDS", N_FOLDS))  # debug: run only the first k folds
 

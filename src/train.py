@@ -319,7 +319,19 @@ def main_extra():
     return names
 
 
+def whisper_upper():
+    """Final-model component: SVR on the mean of Whisper-large-v3 encoder layers 29-31
+    (mean+std pooled; layers chosen by `wavlm_scan whisper_layers`)."""
+    train, _ = load_labels()
+    y = train.label.values
+    Wtr, Wte = load_emb("whisper_layers")            # (n, 33 layers, 2560)
+    cv_and_full("svr_whisperL29_31", svr, Wtr[:, 29:32].mean(1), y, Wte[:, 29:32].mean(1))
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "whisper_upper":
+        whisper_upper()
+        sys.exit()
     if len(sys.argv) > 1 and sys.argv[1] == "extra":
         main_extra()
         sys.exit()

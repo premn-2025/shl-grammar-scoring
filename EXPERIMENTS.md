@@ -105,3 +105,10 @@ Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_w
 - python src/round2_b.py --component rebuilds ridge_r2w_dz exactly.
 - **B2 Whisper decoder entropy** (src/whisper_entropy.py; HF whisper-large-v3 greedy decode per 30 s window, per-token entropy): ent_mean r=-0.515, top1_mean r=+0.531 (as strong as Whisper word confidence, r=0.52). E1 own component: random 0.5009 (2/8), prompt-held-out -0.0019, speaker -0.0015 -> reject (redundant with ASR-confidence features + Whisper embeddings). E2 merged into the prosody Ridge: -0.0072 / -0.0054 / -0.0090 -> reject (it makes the prosody component less complementary).
 - **Round-2 outcome:** one component kept (ridge_r2w_dz) -> final_stack_pw is the new primary candidate.
+## 2026-10-06 - last try (methods from public top solutions; judged vs final_stack_pw, short 0.5004 +/- 0.0026)
+- Public repos for this competition at LB 0.3308 / 0.3316 / 0.3382 use more encoders (w2v-BERT 2.0, audio-LLM states Voxtral-Mini-3B / Qwen2-Audio-7B), multiple ASR views (Parakeet-CTC + cross-ASR disagreement), a Qwen3-8B rubric judge, DeBERTa-v3-large, NNLS stacking with separate weights for the 45 s batch. Their speaker-grouped CV is ~0.51 (ours ~0.49).
+- **w2v-BERT 2.0** (src/embeddings.py w2vbert): best layers 12-16 (Ridge L16 0.588); SVR L12-16 0.555 alone; stack 0.5008 (4/8) -> reject.
+- **Batch-specific stack weights (40-50 s), NNLS stackers:** 0.5009 / 0.5276 / 0.5147 -> reject.
+- **Literal CTC view** (src/ctc_view.py, wav2vec2-large-960h-lv60-self greedy, no LM): cross-ASR features r up to 0.39 (CTC confidence), literal-text LanguageTool r=-0.375. Own component: random 0.5010 (3/8), prompt-held-out +0.0030 (7/8), speaker +0.0002 (4/8) -> mixed, reject. Merged into the prosody Ridge: -0.008 to -0.011 -> reject.
+- Qwen3-8B judge via Ollama: skipped (user decision). Audio LLMs: do not fit 8 GB VRAM without 4-bit quantisation.
+- **Outcome:** final_stack_pw remains the final candidate.

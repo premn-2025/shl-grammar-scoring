@@ -111,8 +111,12 @@ def wavlm(model_name="microsoft/wavlm-base-plus", out_name="wavlm"):
             seg = wav[s:s + chunk]
             if len(seg) < 16000:  # skip <1 s tail
                 continue
-            x = fe(seg, sampling_rate=16000, return_tensors="pt").input_values.to(DEV).half()
-            hs = m(x, output_hidden_states=True).hidden_states  # L x (1, T, D)
+            inp = fe(seg, sampling_rate=16000, return_tensors="pt")
+            if "input_values" in inp:                  # raw-waveform models (WavLM, HuBERT)
+                hs = m(inp.input_values.to(DEV).half(), output_hidden_states=True).hidden_states
+            else:                                      # filterbank models (w2v-BERT 2.0)
+                hs = m(input_features=inp.input_features.to(DEV).half(),
+                       output_hidden_states=True).hidden_states   # L x (1, T, D)
             h = torch.stack(hs, 0)[:, 0].float()                # L x T x D
             s1 = h.sum(1) if s1 is None else s1 + h.sum(1)
             s2 = (h ** 2).sum(1) if s2 is None else s2 + (h ** 2).sum(1)
@@ -133,6 +137,8 @@ if __name__ == "__main__":
         wavlm("microsoft/wavlm-large", "wavlm_large")
     elif what == "hubert_large":   # self-supervised only (not ASR fine-tuned)
         wavlm("facebook/hubert-large-ll60k", "hubert_large")
+    elif what == "w2vbert":        # w2v-BERT 2.0, self-supervised on 4.5M h of 143 languages
+        wavlm("facebook/w2v-bert-2.0", "w2vbert")
     else:
         fn = {"mpnet": mpnet, "deberta": deberta, "cola": cola}[what]
         fn(suffix="_crop45" if crop else "", crop_s=45 if crop else None)

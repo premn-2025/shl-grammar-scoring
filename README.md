@@ -12,22 +12,25 @@ Predicts a continuous grammar score (0–5) for 6–61 s spoken-English answers
 | v1 | weighted blend of 4 models + linear stretch | 0.3529 |
 | v2 | + attention pooling over WavLM frames | 0.3507 |
 | Stack | duration-aware Ridge stack | 0.3440 |
-| Stack + Whisper layers (`final_stack_w`) | + SVR on Whisper-large-v3 encoder layers 29–31 | 0.3432 |
-| **Final** (`final_stack_pw`) | **+ Ridge on prosody, timing, lexical and syntax features** | see [`EXPERIMENTS.md`](EXPERIMENTS.md) |
+| **Final** (`final_stack_w`) | **+ SVR on Whisper-large-v3 encoder layers 29–31** | **0.3432** |
+| Alternative (`final_stack_pw`) | + Ridge on prosody, timing, lexical and syntax features | lower than 0.3432 |
 
-Final model on the 732 non-zero training clips:
+Both final files are selected on Kaggle for the private ranking:
 
-| | RMSE |
-|---|---|
-| **Training (in-sample)** | 0.138 |
-| **Nested cross-validated** | 0.461 (short clips < 50 s: 0.497) |
+| On the 732 non-zero training clips | `final_stack_w` (final) | `final_stack_pw` (alternative) |
+|---|---|---|
+| **Training (in-sample) RMSE** | 0.137 | 0.138 |
+| **Nested cross-validated RMSE** | 0.464 | 0.461 |
+| Nested CV, short clips (< 50 s) | 0.505 | 0.497 |
+| Public leaderboard | **0.3432** | lower |
 
-The prosody/timing component was accepted only after its gain held under all three
-validation schemes: random folds (+0.008 on short clips), prompt-held-out (+0.008) and
-speaker-grouped (+0.014), winning 8/8 splits each time.
+`final_stack_w` has the best public score; `final_stack_pw` has the best cross-validation (its
+gain held under random, prompt-held-out and unseen-speaker CV). The public leaderboard has only
+~130 clips (about ±0.02 of noise), so the two can swap order on the hidden 40%, which is why
+both are selected.
 
-The gap between the two is expected: SVRs on thousands of embedding dimensions nearly
-memorise 769 clips. Every model choice was made on cross-validation, never on training error.
+The training/CV gap is expected: SVRs on thousands of embedding dimensions nearly memorise
+769 clips. Every model choice was made on cross-validation, never on training error.
 
 The **primary metric** is RMSE on non-zero clips. The 37 training clips labelled 0.0 are a
 separate recording batch that the test set doesn't contain (notebook, section 2). Model choices
@@ -43,7 +46,7 @@ leaderboard order of every submission. Full history, including everything that d
 2. **Interpretable features:** LanguageTool error rates (punctuation and casing rules
    excluded), fluency and pauses, disfluencies, syntactic complexity (spaCy), Whisper
    confidence, and CoLA grammatical-acceptability scores.
-3. **Seven components**, each cross-validated with the same 5 folds:
+3. **Six components** (seven in the alternative), each cross-validated with the same 5 folds:
 
    | Component | Input | Model | CV RMSE |
    |---|---|---|---|
@@ -53,12 +56,12 @@ leaderboard order of every submission. Full history, including everything that d
    | `attnpool_wavlmL` | attention pooling over WavLM frames | small neural net | 0.563 |
    | `ridge_deb_hand_dz` | DeBERTa-v3 embedding + hand features (no 0.0 clips) | Ridge | 0.602 |
    | `ft_roberta` | fine-tuned RoBERTa-CoLA, 3 seeds (no 0.0 clips) | transformer | 0.684 |
-   | `ridge_r2w_dz` | pitch, energy, short pauses, tempo variation, MTLD, dependency distance, fragments; each clipped to its training 1st–99th percentile (no 0.0 clips) | Ridge | 0.867 |
+   | `ridge_r2w_dz` (alternative only) | pitch, energy, short pauses, tempo variation, MTLD, dependency distance, fragments; each clipped to its training 1st–99th percentile (no 0.0 clips) | Ridge | 0.867 |
 
-   The last component is weak alone, but its information is different from the others, so it
-   adds the most to the stack.
+   The last component is weak alone, but its information differs from the others, so it adds
+   the most to the stack in cross-validation.
 
-4. **Duration-aware Ridge stack:** the 7 out-of-fold predictions, plus duration (clamped to
+4. **Duration-aware Ridge stack:** the out-of-fold predictions, plus duration (clamped to
    20–61 s), speech rate and ASR confidence, plus prediction × duration interactions. On short
    answers it trusts the fine-tuned text model more and the pooled audio SVRs less.
 
@@ -123,7 +126,10 @@ $env:FT_FULL="1"; foreach ($s in 0,1,2) { python src/finetune_text.py textattack
 python src/final.py                                  # SVR/Ridge components + full-fit predictions
 python src/train.py wavlm_scan whisper_layers        # layer scan (choose layers 29-31)
 python src/train.py whisper_upper                    # SVR on Whisper layers 29-31
-python src/round2_b.py --component                   # prosody/timing features + Ridge component
+# final submission (public LB 0.3432):
+python src/stack.py svr_all,svr_wavlm_large,ridge_deb_hand_dz,ft_roberta,attnpool_wavlmL,svr_whisperL29_31 --out final_stack_w
+# alternative submission (best CV): prosody/timing component + 7-component stack
+python src/round2_b.py --component
 python src/stack.py svr_all,svr_wavlm_large,ridge_deb_hand_dz,ft_roberta,attnpool_wavlmL,svr_whisperL29_31,ridge_r2w_dz --out final_stack_pw
 python src/make_notebook.py
 jupyter nbconvert --execute --to notebook --inplace notebooks/SHL_Grammar_Scoring.ipynb

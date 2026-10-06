@@ -112,3 +112,4 @@ Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_w
 - **Literal CTC view** (src/ctc_view.py, wav2vec2-large-960h-lv60-self greedy, no LM): cross-ASR features r up to 0.39 (CTC confidence), literal-text LanguageTool r=-0.375. Own component: random 0.5010 (3/8), prompt-held-out +0.0030 (7/8), speaker +0.0002 (4/8) -> mixed, reject. Merged into the prosody Ridge: -0.008 to -0.011 -> reject.
 - Qwen3-8B judge via Ollama: skipped (user decision). Audio LLMs: do not fit 8 GB VRAM without 4-bit quantisation.
 - **Outcome:** final_stack_pw remains the final candidate.
+- **Final selection (2026-10-06):** both inal_stack_w and inal_stack_pw submitted and selected. Public LB: final_stack_w 0.3432 (top), final_stack_pw lower. Documented final model = final_stack_w (notebook submission.csv == final_stack_w.csv); final_stack_pw kept as the CV-best alternative for the private ranking.

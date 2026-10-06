@@ -39,10 +39,10 @@ spoken-English answers. Train: 769 labelled WAV clips; test: 216 clips. Metric: 
  fluency, CoLA,              WavLM frames   regressor            │
  complexity, ASR conf.)          │              │                 │
         │                        │              │                 │
- ═══════ seven components, each 5-fold cross-validated (out-of-fold predictions) ═══════
+ ═══════ six components, each 5-fold cross-validated (out-of-fold predictions) ═══════
   1 SVR(all blocks)  2 SVR(WavLM-L)  3 Ridge(DeBERTa+hand)  4 RoBERTa-CoLA
   5 attention pooling  6 SVR(Whisper L29-31)
-  7 Ridge(prosody + timing + lexical/syntax features, winsorised to the training range)
+  (alternative submission adds 7: Ridge on prosody/timing/lexical/syntax features)
         │
         ▼
  duration-aware Ridge STACK: component predictions + duration + speech rate + ASR
@@ -76,10 +76,11 @@ plt.rcParams.update({"figure.dpi": 110, "axes.spines.top": False, "axes.spines.r
                      "ytick.color": MUTED, "axes.titleweight": "bold"})
 PLOTS = ROOT / "plots"; PLOTS.mkdir(exist_ok=True)
 
-FINAL = "final_stack_pw"     # final model: duration-aware stack incl. prosody/timing component
-LB = {"final_stack_w": "0.3432", "final_stack_pw": "see EXPERIMENTS.md"}
+FINAL = "final_stack_w"      # final model: duration-aware stack of 6 components (public LB 0.3432)
+ALT = "final_stack_pw"       # second selected submission: + prosody/timing component (best CV)
+LB = {"final_stack_w": "0.3432", "final_stack_pw": "lower than 0.3432"}
 STACK_COMPONENTS = ["svr_all", "svr_wavlm_large", "ridge_deb_hand_dz", "ft_roberta",
-                    "attnpool_wavlmL", "svr_whisperL29_31", "ridge_r2w_dz"]
+                    "attnpool_wavlmL", "svr_whisperL29_31", "ridge_r2w_dz"]   # last one: ALT only
 
 train, test = T.load_labels()
 y = train.label.values
@@ -175,7 +176,7 @@ md(r"""
 | Complexity | sentence length, spaCy dependency-tree depth, subordinate clauses (mark/advcl/ccomp/relcl/xcomp/acl), tense variety, MATTR | rubric: "complex structures handled well" |
 | ASR confidence | Whisper avg log-prob, mean word probability, fraction of low-probability words | non-native / ungrammatical speech is harder for the ASR language model |
 | CoLA | P(acceptable) per sentence from `textattack/roberta-base-CoLA`: mean, min, % unacceptable | a pretrained grammaticality judge |
-| Prosody & timing (`src/round2_b.py`) | pitch (YIN, semitones): std, range, jump std; RMS energy: mean, variation, low-energy share; short pauses (> 0.25 s) per minute; tempo variation over 5 s windows; MTLD; mean dependency distance; fragment share | broken sentences show pitch resets and hesitation; used as their **own** stack component (7) |
+| Prosody & timing (`src/round2_b.py`) | pitch (YIN, semitones): std, range, jump std; RMS energy: mean, variation, low-energy share; short pauses (> 0.25 s) per minute; tempo variation over 5 s windows; MTLD; mean dependency distance; fragment share | broken sentences show pitch resets and hesitation; used as their **own** stack component (7) in the alternative submission `final_stack_pw` |
 
 **Length robustness.** Test clips are shorter, so everything is a rate; we use MATTR
 (moving-average type–token ratio) instead of TTR, which falls with text length. The
@@ -296,7 +297,7 @@ pd.DataFrame(rows).set_index("component").round(4)
 md(r"""
 ### Final model: duration-aware Ridge stack (`src/stack.py`)
 
-Each clip gets 7 component predictions (out-of-fold), plus its duration (clamped to the
+Each clip gets 6 component predictions (out-of-fold), plus its duration (clamped to the
 training range 20–61 s so nothing extrapolates), words per minute and Whisper mean word
 confidence, plus **prediction × duration** interactions. A Ridge regression (α chosen by
 internal CV) maps these to the score, trained on the 732 non-zero clips.
@@ -312,6 +313,9 @@ print("stack components:", rep["components"])
 print(f"Ridge alpha: {rep['alpha']:.2f}")
 print(f"nested CV RMSE (non-zero): {rep['nested_rmse_nz']:.4f} | short clips: {rep['nested_rmse_short']:.4f}"
       f" | long clips: {rep['nested_rmse_long']:.4f}")
+alt = json.loads((ROOT / "cache" / f"{ALT}_report.json").read_text())
+print(f"alternative {ALT} (+ prosody/timing component): nested {alt['nested_rmse_nz']:.4f} | "
+      f"short clips {alt['nested_rmse_short']:.4f} | training {alt['train_insample']['rmse_nz']:.4f}")
 pd.Series(rep["coef"]).round(3).to_frame("Ridge coefficient")
 """)
 
@@ -444,8 +448,12 @@ md(r"""
 | v1 | weighted blend of 4 models + linear stretch | 0.3529 |
 | v2 | + attention pooling over WavLM frames | 0.3507 |
 | stack | duration-aware Ridge stack | 0.3440 |
-| stack + Whisper L29–31 | + SVR on Whisper's upper encoder layers | 0.3432 |
-| **+ prosody/timing component** (`final_stack_pw`) | **+ Ridge on pitch, energy, pause, tempo, lexical and syntax features** (short-clip CV 0.5052 → 0.4973) | see `EXPERIMENTS.md` |
+| **stack + Whisper L29–31 (`final_stack_w`, final)** | **+ SVR on Whisper's upper encoder layers** | **0.3432** |
+| alternative (`final_stack_pw`, also selected) | + Ridge on pitch, energy, pause, tempo, lexical and syntax features: best CV (short clips 0.5052 → 0.4973, gain held on prompt-held-out and unseen-speaker CV) | lower than 0.3432 |
+
+Both are selected for the final (private) ranking: `final_stack_w` has the best public score,
+`final_stack_pw` the best cross-validation. With ~130 public clips (±0.02 noise) the two can
+swap order on the hidden 40%.
 
 **Conclusions**
 * Frozen self-supervised **speech representations** are the strongest signal (WavLM-large
@@ -476,6 +484,7 @@ md(r"""
 | shrinking novel-prompt clips, duration clipping, quantile alignment | no gain / worse |
 | Huber, Bayesian Ridge, LightGBM stackers; KNN neighbour features; mid-fusion MLP | no gain |
 | Whisper decoder entropy | r = −0.52 alone, but redundant with ASR confidence |
+| w2v-BERT 2.0, literal CTC transcript + cross-ASR disagreement, NNLS / batch-specific stackers | no gain (cross-ASR helped only on unseen prompts) |
 
 **Limitations**
 * ASR errors and Whisper's normalisation of ungrammatical speech; word timestamps are coarse.

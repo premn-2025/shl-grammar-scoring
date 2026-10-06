@@ -39,10 +39,11 @@ spoken-English answers. Train: 769 labelled WAV clips; test: 216 clips. Metric: 
  fluency, CoLA,              WavLM frames   regressor            │
  complexity, ASR conf.)          │              │                 │
         │                        │              │                 │
- ═══════ six components, each 5-fold cross-validated (out-of-fold predictions) ═══════
+ ═══════ seven components, each 5-fold cross-validated (out-of-fold predictions) ═══════
   1 SVR(all blocks)  2 SVR(WavLM-L)  3 Ridge(DeBERTa+hand)  4 RoBERTa-CoLA
   5 attention pooling  6 SVR(Whisper L29-31)
-  (alternative submission adds 7: Ridge on prosody/timing/lexical/syntax features)
+  7 Ridge on a local LLM judge's outputs (Qwen3.5-9B via Ollama: rubric score, error
+    counts by type, complex structures) - zero-shot, works on prompts never seen in training
         │
         ▼
  duration-aware Ridge STACK: component predictions + duration + speech rate + ASR
@@ -76,11 +77,11 @@ plt.rcParams.update({"figure.dpi": 110, "axes.spines.top": False, "axes.spines.r
                      "ytick.color": MUTED, "axes.titleweight": "bold"})
 PLOTS = ROOT / "plots"; PLOTS.mkdir(exist_ok=True)
 
-FINAL = "final_stack_w"      # final model: duration-aware stack of 6 components (public LB 0.3432)
-ALT = "final_stack_pw"       # second selected submission: + prosody/timing component (best CV)
-LB = {"final_stack_w": "0.3432", "final_stack_pw": "lower than 0.3432"}
+FINAL = "final_stack_wj"     # final model: 6 components + local LLM-judge component (LB 0.3362)
+ALT = "final_stack_w"        # previous best (LB 0.3432), kept selected as a fallback
+LB = {"final_stack_wj": "0.3362", "final_stack_w": "0.3432", "final_stack_pw": "lower than 0.3432"}
 STACK_COMPONENTS = ["svr_all", "svr_wavlm_large", "ridge_deb_hand_dz", "ft_roberta",
-                    "attnpool_wavlmL", "svr_whisperL29_31", "ridge_r2w_dz"]   # last one: ALT only
+                    "attnpool_wavlmL", "svr_whisperL29_31", "ridge_llm9b_dz", "ridge_r2w_dz"]
 
 train, test = T.load_labels()
 y = train.label.values
@@ -176,7 +177,8 @@ md(r"""
 | Complexity | sentence length, spaCy dependency-tree depth, subordinate clauses (mark/advcl/ccomp/relcl/xcomp/acl), tense variety, MATTR | rubric: "complex structures handled well" |
 | ASR confidence | Whisper avg log-prob, mean word probability, fraction of low-probability words | non-native / ungrammatical speech is harder for the ASR language model |
 | CoLA | P(acceptable) per sentence from `textattack/roberta-base-CoLA`: mean, min, % unacceptable | a pretrained grammaticality judge |
-| Prosody & timing (`src/round2_b.py`) | pitch (YIN, semitones): std, range, jump std; RMS energy: mean, variation, low-energy share; short pauses (> 0.25 s) per minute; tempo variation over 5 s windows; MTLD; mean dependency distance; fragment share | broken sentences show pitch resets and hesitation; used as their **own** stack component (7) in the alternative submission `final_stack_pw` |
+| Prosody & timing (`src/round2_b.py`) | pitch (YIN, semitones): std, range, jump std; RMS energy: mean, variation, low-energy share; short pauses (> 0.25 s) per minute; tempo variation over 5 s windows; MTLD; mean dependency distance; fragment share | broken sentences show pitch resets and hesitation; own stack component in the alternative submission `final_stack_pw` |
+| LLM judge (`src/llm_judge_ollama.py`) | Qwen3.5-9B run locally with Ollama (temperature 0, seed 42): rubric score 1–5, errors per 100 words by type (tense, agreement, articles/prepositions, word order, incomplete sentences), complex structures, confidence | a grammar rater that needs no training labels and no prompt-specific data (score r = 0.57); own stack component (7) in the final model |
 
 **Length robustness.** Test clips are shorter, so everything is a rate; we use MATTR
 (moving-average type–token ratio) instead of TTR, which falls with text length. The
@@ -297,7 +299,7 @@ pd.DataFrame(rows).set_index("component").round(4)
 md(r"""
 ### Final model: duration-aware Ridge stack (`src/stack.py`)
 
-Each clip gets 6 component predictions (out-of-fold), plus its duration (clamped to the
+Each clip gets 7 component predictions (out-of-fold), plus its duration (clamped to the
 training range 20–61 s so nothing extrapolates), words per minute and Whisper mean word
 confidence, plus **prediction × duration** interactions. A Ridge regression (α chosen by
 internal CV) maps these to the score, trained on the 732 non-zero clips.
@@ -314,7 +316,7 @@ print(f"Ridge alpha: {rep['alpha']:.2f}")
 print(f"nested CV RMSE (non-zero): {rep['nested_rmse_nz']:.4f} | short clips: {rep['nested_rmse_short']:.4f}"
       f" | long clips: {rep['nested_rmse_long']:.4f}")
 alt = json.loads((ROOT / "cache" / f"{ALT}_report.json").read_text())
-print(f"alternative {ALT} (+ prosody/timing component): nested {alt['nested_rmse_nz']:.4f} | "
+print(f"previous best {ALT} (LB {LB[ALT]}): nested {alt['nested_rmse_nz']:.4f} | "
       f"short clips {alt['nested_rmse_short']:.4f} | training {alt['train_insample']['rmse_nz']:.4f}")
 pd.Series(rep["coef"]).round(3).to_frame("Ridge coefficient")
 """)
@@ -448,12 +450,14 @@ md(r"""
 | v1 | weighted blend of 4 models + linear stretch | 0.3529 |
 | v2 | + attention pooling over WavLM frames | 0.3507 |
 | stack | duration-aware Ridge stack | 0.3440 |
-| **stack + Whisper L29–31 (`final_stack_w`, final)** | **+ SVR on Whisper's upper encoder layers** | **0.3432** |
-| alternative (`final_stack_pw`, also selected) | + Ridge on pitch, energy, pause, tempo, lexical and syntax features: best CV (short clips 0.5052 → 0.4973, gain held on prompt-held-out and unseen-speaker CV) | lower than 0.3432 |
+| stack + Whisper L29–31 (`final_stack_w`) | + SVR on Whisper's upper encoder layers | 0.3432 |
+| alternative (`final_stack_pw`) | + Ridge on pitch, energy, pause, tempo, lexical and syntax features (best random-fold CV) | lower than 0.3432 |
+| **+ local LLM judge (`final_stack_wj`, final)** | **+ Ridge on Qwen3.5-9B grammar judgements** | **0.3362** |
 
-Both are selected for the final (private) ranking: `final_stack_w` has the best public score,
-`final_stack_pw` the best cross-validation. With ~130 public clips (±0.02 noise) the two can
-swap order on the hidden 40%.
+The LLM-judge gain was invisible in random-fold CV (−0.0002) but visible in **prompt-held-out
+CV (+0.0044, 7/8 splits)**, and the public leaderboard confirmed it. A zero-shot judge rates
+grammar without having seen the prompt, which is exactly what the test (half unseen prompts)
+needs. `final_stack_wj` and `final_stack_w` are both selected for the private ranking.
 
 **Conclusions**
 * Frozen self-supervised **speech representations** are the strongest signal (WavLM-large
@@ -465,6 +469,11 @@ swap order on the hidden 40%.
   effect, the prompt shift and repeated speakers decided what was kept.
 * **Diversity beats strength in the ensemble**: RoBERTa-large was a better model alone (short
   clips 0.621 vs 0.688) but made the stack worse because it overlapped with the joint SVR.
+* **A zero-shot LLM judge generalises to unseen prompts.** Run locally (Qwen3.5-9B through
+  Ollama), its rubric score correlates 0.57 with the human grade; as a stack component it was
+  neutral in random-fold CV but +0.0044 on prompt-held-out CV, and lowered the public score
+  from 0.3432 to **0.3362**. The right validation scheme depends on the signal: prompt-held-out
+  CV is the better guide for prompt-independent features.
 
 **Tried and rejected (all with honest nested / short-clip CV)**
 

@@ -12,14 +12,19 @@ Predicts a continuous grammar score (0–5) for 6–61 s spoken-English answers
 | v1 | weighted blend of 4 models + linear stretch | 0.3529 |
 | v2 | + attention pooling over WavLM frames | 0.3507 |
 | Stack | duration-aware Ridge stack | 0.3440 |
-| **Final** (`final_stack_w`) | **+ SVR on Whisper-large-v3 encoder layers 29–31** | **0.3432** |
+| Stack + Whisper layers (`final_stack_w`) | + SVR on Whisper-large-v3 encoder layers 29–31 | 0.3432 |
+| **Final** (`final_stack_pw`) | **+ Ridge on prosody, timing, lexical and syntax features** | see [`EXPERIMENTS.md`](EXPERIMENTS.md) |
 
 Final model on the 732 non-zero training clips:
 
 | | RMSE |
 |---|---|
-| **Training (in-sample)** | 0.137 |
-| **Nested cross-validated** | 0.464 (short clips < 50 s: 0.505) |
+| **Training (in-sample)** | 0.138 |
+| **Nested cross-validated** | 0.461 (short clips < 50 s: 0.497) |
+
+The prosody/timing component was accepted only after its gain held under all three
+validation schemes: random folds (+0.008 on short clips), prompt-held-out (+0.008) and
+speaker-grouped (+0.014), winning 8/8 splits each time.
 
 The gap between the two is expected: SVRs on thousands of embedding dimensions nearly
 memorise 769 clips. Every model choice was made on cross-validation, never on training error.
@@ -38,7 +43,7 @@ leaderboard order of every submission. Full history, including everything that d
 2. **Interpretable features:** LanguageTool error rates (punctuation and casing rules
    excluded), fluency and pauses, disfluencies, syntactic complexity (spaCy), Whisper
    confidence, and CoLA grammatical-acceptability scores.
-3. **Six components**, each cross-validated with the same 5 folds:
+3. **Seven components**, each cross-validated with the same 5 folds:
 
    | Component | Input | Model | CV RMSE |
    |---|---|---|---|
@@ -48,8 +53,12 @@ leaderboard order of every submission. Full history, including everything that d
    | `attnpool_wavlmL` | attention pooling over WavLM frames | small neural net | 0.563 |
    | `ridge_deb_hand_dz` | DeBERTa-v3 embedding + hand features (no 0.0 clips) | Ridge | 0.602 |
    | `ft_roberta` | fine-tuned RoBERTa-CoLA, 3 seeds (no 0.0 clips) | transformer | 0.684 |
+   | `ridge_r2w_dz` | pitch, energy, short pauses, tempo variation, MTLD, dependency distance, fragments; each clipped to its training 1st–99th percentile (no 0.0 clips) | Ridge | 0.867 |
 
-4. **Duration-aware Ridge stack:** the 6 out-of-fold predictions, plus duration (clamped to
+   The last component is weak alone, but its information is different from the others, so it
+   adds the most to the stack.
+
+4. **Duration-aware Ridge stack:** the 7 out-of-fold predictions, plus duration (clamped to
    20–61 s), speech rate and ASR confidence, plus prediction × duration interactions. On short
    answers it trusts the fine-tuned text model more and the pooled audio SVRs less.
 
@@ -62,7 +71,11 @@ leaderboard order of every submission. Full history, including everything that d
 - **Repeated speakers:** they occur in training but never in test. This inflated audio models'
   CV by 0.03–0.04, but the stack's weights stay best on unseen speakers.
 - **Layer choice:** WavLM's best layers are upper-middle; Whisper's are near the top.
-- **Diversity beats strength:** RoBERTa-large was better alone but made the stack worse.
+- **Diversity beats strength:** RoBERTa-large was better alone but made the stack worse, while
+  the weak (0.87) prosody/timing component gave the largest late gain.
+- **Many ideas were tested and rejected** under a strict paired rule (same 8 splits, ≥ 6/8
+  wins, gain above noise): HuBERT, bagging, pseudo-labels, Whisper LoRA, post-processing,
+  alternative stackers, KNN features, mid-fusion MLP, decoder entropy. See `EXPERIMENTS.md`.
 
 ## Setup (Windows 11, RTX 4060 8 GB, Python 3.11)
 
@@ -110,7 +123,8 @@ $env:FT_FULL="1"; foreach ($s in 0,1,2) { python src/finetune_text.py textattack
 python src/final.py                                  # SVR/Ridge components + full-fit predictions
 python src/train.py wavlm_scan whisper_layers        # layer scan (choose layers 29-31)
 python src/train.py whisper_upper                    # SVR on Whisper layers 29-31
-python src/stack.py svr_all,svr_wavlm_large,ridge_deb_hand_dz,ft_roberta,attnpool_wavlmL,svr_whisperL29_31 --out final_stack_w
+python src/round2_b.py --component                   # prosody/timing features + Ridge component
+python src/stack.py svr_all,svr_wavlm_large,ridge_deb_hand_dz,ft_roberta,attnpool_wavlmL,svr_whisperL29_31,ridge_r2w_dz --out final_stack_pw
 python src/make_notebook.py
 jupyter nbconvert --execute --to notebook --inplace notebooks/SHL_Grammar_Scoring.ipynb
 ```

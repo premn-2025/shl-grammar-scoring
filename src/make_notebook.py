@@ -39,9 +39,10 @@ spoken-English answers. Train: 769 labelled WAV clips; test: 216 clips. Metric: 
  fluency, CoLA,              WavLM frames   regressor            │
  complexity, ASR conf.)          │              │                 │
         │                        │              │                 │
- ═══════ six components, each 5-fold cross-validated (out-of-fold predictions) ═══════
+ ═══════ seven components, each 5-fold cross-validated (out-of-fold predictions) ═══════
   1 SVR(all blocks)  2 SVR(WavLM-L)  3 Ridge(DeBERTa+hand)  4 RoBERTa-CoLA
   5 attention pooling  6 SVR(Whisper L29-31)
+  7 Ridge(prosody + timing + lexical/syntax features, winsorised to the training range)
         │
         ▼
  duration-aware Ridge STACK: component predictions + duration + speech rate + ASR
@@ -75,9 +76,10 @@ plt.rcParams.update({"figure.dpi": 110, "axes.spines.top": False, "axes.spines.r
                      "ytick.color": MUTED, "axes.titleweight": "bold"})
 PLOTS = ROOT / "plots"; PLOTS.mkdir(exist_ok=True)
 
-FINAL = "final_stack_w"      # the submitted model (public LB 0.3432)
+FINAL = "final_stack_pw"     # final model: duration-aware stack incl. prosody/timing component
+LB = {"final_stack_w": "0.3432", "final_stack_pw": "see EXPERIMENTS.md"}
 STACK_COMPONENTS = ["svr_all", "svr_wavlm_large", "ridge_deb_hand_dz", "ft_roberta",
-                    "attnpool_wavlmL", "svr_whisperL29_31"]
+                    "attnpool_wavlmL", "svr_whisperL29_31", "ridge_r2w_dz"]
 
 train, test = T.load_labels()
 y = train.label.values
@@ -173,6 +175,7 @@ md(r"""
 | Complexity | sentence length, spaCy dependency-tree depth, subordinate clauses (mark/advcl/ccomp/relcl/xcomp/acl), tense variety, MATTR | rubric: "complex structures handled well" |
 | ASR confidence | Whisper avg log-prob, mean word probability, fraction of low-probability words | non-native / ungrammatical speech is harder for the ASR language model |
 | CoLA | P(acceptable) per sentence from `textattack/roberta-base-CoLA`: mean, min, % unacceptable | a pretrained grammaticality judge |
+| Prosody & timing (`src/round2_b.py`) | pitch (YIN, semitones): std, range, jump std; RMS energy: mean, variation, low-energy share; short pauses (> 0.25 s) per minute; tempo variation over 5 s windows; MTLD; mean dependency distance; fragment share | broken sentences show pitch resets and hesitation; used as their **own** stack component (7) |
 
 **Length robustness.** Test clips are shorter, so everything is a rate; we use MATTR
 (moving-average type–token ratio) instead of TTR, which falls with text length. The
@@ -293,7 +296,7 @@ pd.DataFrame(rows).set_index("component").round(4)
 md(r"""
 ### Final model: duration-aware Ridge stack (`src/stack.py`)
 
-Each clip gets 6 component predictions (out-of-fold), plus its duration (clamped to the
+Each clip gets 7 component predictions (out-of-fold), plus its duration (clamped to the
 training range 20–61 s so nothing extrapolates), words per minute and Whisper mean word
 confidence, plus **prediction × duration** interactions. A Ridge regression (α chosen by
 internal CV) maps these to the score, trained on the 732 non-zero clips.
@@ -325,7 +328,7 @@ print(f"    {ins_m['rmse_nz']:.4f} on the 732 non-zero clips")
 print(f"CROSS-VALIDATED RMSE (nested 5-fold out-of-fold)")
 print(f"    {T.rmse(fin['oof'][nzm], y[nzm]):.4f} on the 732 non-zero clips "
       f"(short clips {rep['nested_rmse_short']:.4f})")
-print(f"PUBLIC LEADERBOARD RMSE: 0.3432")
+print(f"PUBLIC LEADERBOARD RMSE: {LB.get(FINAL, 'n/a')}")
 print("=" * 72)
 """)
 md(r"""
@@ -441,7 +444,8 @@ md(r"""
 | v1 | weighted blend of 4 models + linear stretch | 0.3529 |
 | v2 | + attention pooling over WavLM frames | 0.3507 |
 | stack | duration-aware Ridge stack | 0.3440 |
-| **stack + Whisper L29–31** | **+ SVR on Whisper's upper encoder layers** | **0.3432** |
+| stack + Whisper L29–31 | + SVR on Whisper's upper encoder layers | 0.3432 |
+| **+ prosody/timing component** (`final_stack_pw`) | **+ Ridge on pitch, energy, pause, tempo, lexical and syntax features** (short-clip CV 0.5052 → 0.4973) | see `EXPERIMENTS.md` |
 
 **Conclusions**
 * Frozen self-supervised **speech representations** are the strongest signal (WavLM-large
@@ -467,6 +471,11 @@ md(r"""
 | importance weighting of short clips, gating by prompt novelty | no gain (test prompts are more novel than any training clip, so trust cannot be learned) |
 | grammar error-type features, ordinal regression | no gain |
 | RoBERTa-large-CoLA (3 seeds) | best text model alone, worse in the stack |
+| HuBERT-large, repeated-CV bagging, train+test scaling, pseudo-labels | no stack gain under the paired rule |
+| LoRA fine-tune of Whisper's top 8 encoder layers (3 seeds) | 0.526 alone; borderline in the stack (7/8, gain within noise); LB 0.3447 |
+| shrinking novel-prompt clips, duration clipping, quantile alignment | no gain / worse |
+| Huber, Bayesian Ridge, LightGBM stackers; KNN neighbour features; mid-fusion MLP | no gain |
+| Whisper decoder entropy | r = −0.52 alone, but redundant with ASR confidence |
 
 **Limitations**
 * ASR errors and Whisper's normalisation of ungrammatical speech; word timestamps are coarse.

@@ -18,10 +18,16 @@ import pandas as pd
 import requests
 
 ROOT = Path(__file__).resolve().parents[1]
-CACHE = ROOT / "cache" / "llm_judge.jsonl"
-OUT = ROOT / "cache" / "features_llm_judge.csv"
 URL = "http://localhost:11434/api/chat"
-MODEL = sys.argv[1] if len(sys.argv) > 1 else "qwen3.5:9b"
+ARGS = sys.argv[1:]
+MODEL = ARGS[0] if ARGS and not ARGS[0].startswith("--") else "qwen3.5:9b"
+TAG = ARGS[ARGS.index("--tag") + 1] if "--tag" in ARGS else ""
+ANCHORED = "--anchors" in ARGS
+SUFFIX = f"_{TAG}" if TAG else ""
+CACHE = ROOT / "cache" / f"llm_judge{SUFFIX}.jsonl"
+OUT = ROOT / "cache" / f"features_llm_judge{SUFFIX}.csv"
+BASE_CACHE = ROOT / "cache" / "llm_judge.jsonl"   # zero-shot Qwen3.5-9B run (for anchor clips)
+ANCHOR_LEVELS = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
 RUBRIC = """Grammar rubric (spoken English, 1-5):
 1 = struggles with sentence structure, relies on memorised patterns, many errors.
@@ -67,10 +73,38 @@ SCHEMA = {
 }
 
 
+def anchors():
+    """Few-shot calibration examples: for each score level, the non-zero TRAINING clip whose
+    transcript length is closest to 110 words (deterministic, label-blind within a level).
+    Returns (prompt block, set of anchor filenames)."""
+    tr = pd.read_csv(ROOT / "cache" / "transcripts.csv").fillna({"text": ""})
+    lab = pd.read_csv(ROOT / "data" / "train.csv")
+    d = tr[tr.split == "train"].merge(lab, on="filename")
+    d = d[(d.duration >= 40)].assign(nw=d.text.str.split().str.len())
+    blocks, names = [], set()
+    for lv in ANCHOR_LEVELS:
+        c = d[d.label == lv]
+        if c.empty:
+            continue
+        r = c.iloc[(c.nw - 110).abs().argsort().iloc[0]]
+        names.add(r.filename)
+        blocks.append(f'Example rated {lv} by trained human raters:\n"""{" ".join(r.text.split()[:130])}"""')
+    head = ("To calibrate your scale, here are real answers to similar tasks with the grammar "
+            "score that trained human raters gave them:\n\n" + "\n\n".join(blocks) + "\n\n")
+    return head, names
+
+
+ANCHOR_HEAD, ANCHOR_NAMES = anchors() if ANCHORED else ("", set())
+
+
 def judge(text):
-    body = {"model": MODEL, "stream": False, "think": False, "format": SCHEMA,
-            "options": {"temperature": 0, "seed": 42, "num_ctx": 4096},
-            "messages": [{"role": "user", "content": PROMPT.format(rubric=RUBRIC, text=text)}]}
+    # anchors first (identical prefix for every clip -> Ollama reuses its prompt cache)
+    content = ANCHOR_HEAD + PROMPT.format(rubric=RUBRIC, text=text)
+    body = {"model": MODEL, "stream": False, "format": SCHEMA,
+            "options": {"temperature": 0, "seed": 42, "num_ctx": 6144 if ANCHORED else 4096},
+            "messages": [{"role": "user", "content": content}]}
+    if MODEL.startswith("qwen3"):
+        body["think"] = False                       # Qwen3-family: no hidden reasoning
     last = None
     for attempt in range(3):
         try:
@@ -108,6 +142,14 @@ def main():
             if k % 25 == 0:
                 print(f"{k}/{len(todo)}  {(time.time() - t0) / (k + 1):.1f} s/clip", flush=True)
     rows = [json.loads(l) for l in CACHE.read_text(encoding="utf-8").splitlines()]
+    if ANCHOR_NAMES:
+        # an anchor clip was rated while its own label was in the prompt -> use its zero-shot
+        # rating instead, so no label leaks into the features
+        base = {(r["split"], r["filename"]): r for r in
+                (json.loads(l) for l in BASE_CACHE.read_text(encoding="utf-8").splitlines())}
+        rows = [({**base[("train", r["filename"])], "model": r["model"]}
+                 if r["split"] == "train" and r["filename"] in ANCHOR_NAMES else r) for r in rows]
+        print("anchor clips replaced with zero-shot ratings:", sorted(ANCHOR_NAMES))
     d = pd.DataFrame(rows)
     words = tr.set_index(["split", "filename"]).text.str.split().str.len().clip(lower=1)
     n = d.set_index(["split", "filename"]).index.map(lambda i: words.get(i, 1)).values

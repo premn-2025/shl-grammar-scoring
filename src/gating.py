@@ -64,22 +64,41 @@ def evaluate(design_fn, names=BASE, label=""):
     return r.mean(0)
 
 
-def per_split(names=BASE, design_fn=None, folder=None):
-    """Short-clip and all-clip RMSE of the stacker for each of the 8 SPLITS (paired design)."""
+def stack_oof(names=BASE, design_fn=None, folder=None, model=None, extra=None):
+    """Nested stacker OOF predictions for each of the 8 SPLITS: list of (8) arrays over the
+    non-zero clips. model: stacker factory (default Ridge). extra: optional (n_train, k) block
+    appended to the design."""
     design_fn = design_fn or base_design
+    model = model or S.ridge
+    train, _ = T.load_labels()
+    y = train.label.values
+    nz = np.where(y > 0)[0]
+    X = design_fn(preds(names, folder=folder), "train")
+    if extra is not None:
+        X = np.hstack([X, extra])
+    X, yy = X[nz], y[nz]
+    outs = []
+    for seed in SPLITS:
+        o = np.zeros(len(nz))
+        for a, b in KFold(5, shuffle=True, random_state=seed).split(nz):
+            o[b] = np.clip(model().fit(X[a], yy[a]).predict(X[b]), 0, 5)
+        outs.append(o)
+    return outs
+
+
+def score(outs):
+    """(8, 2) array [short RMSE, all RMSE] for a list of per-split OOF arrays."""
     train, _ = T.load_labels()
     y = train.label.values
     nz = np.where(y > 0)[0]
     short = S.meta_frame("train")[nz, 0] < 50
-    X = design_fn(preds(names, folder=folder), "train")[nz]
     yy = y[nz]
-    out = []
-    for seed in SPLITS:
-        o = np.zeros(len(nz))
-        for a, b in KFold(5, shuffle=True, random_state=seed).split(nz):
-            o[b] = np.clip(S.ridge().fit(X[a], yy[a]).predict(X[b]), 0, 5)
-        out.append((T.rmse(o[short], yy[short]), T.rmse(o, yy)))
-    return np.array(out)          # (8, 2): [short, all]
+    return np.array([(T.rmse(o[short], yy[short]), T.rmse(o, yy)) for o in outs])
+
+
+def per_split(names=BASE, design_fn=None, folder=None, model=None, extra=None):
+    """Short-clip and all-clip RMSE of the stacker for each of the 8 SPLITS (paired design)."""
+    return score(stack_oof(names, design_fn, folder, model, extra))
 
 
 def compare(cand, base=None, label=""):

@@ -121,3 +121,5 @@ Submission files: `00_mean_baseline` (LB 1.0050), `02_ridge_wavlm_L7`, `03_svr_w
 - Judges: Z = Qwen3.5-9B zero-shot r=0.572; **A = Qwen3.5-9B anchored with 8 human-scored training answers (one per level 1.5-5.0) r=0.592**; G = Gemma2-9B zero-shot r=0.540. corr(Z, A) = 0.869. Anchor clips' own ratings replaced by their zero-shot ratings (no label leak).
 - vs final_stack_wj (paired short-clip CV, 8 splits): **V1 anchored replaces zero-shot: random +0.0019 (8/8), prompt-held-out +0.0026 (8/8), speaker +0.0024 (8/8) -> KEEP** (cleanest win of the project). V2 Z+A one Ridge +0.0011/+0.0013/+0.0020 (reject: below 0.0015 on prompt-held-out); V4 two components reject; any Gemma combination worse (V3 -0.0019..-0.0028, V5 -0.0026..-0.0045).
 - Candidate inal_stack_wj2.csv (final_stack_w components + anchored-judge Ridge): train 0.150; test predictions differ from final_stack_wj by 0.036 RMS. Public LB: pending.
+- Public LB of final_stack_pw: 0.3493.
+- **Final selections (2 allowed):** final_stack_wj (0.3362, best public score) + final_stack_wj2 (0.3387, best CV on all three schemes, 24/24 paired wins).

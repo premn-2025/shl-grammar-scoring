@@ -13,21 +13,25 @@ Predicts a continuous grammar score (0–5) for 6–61 s spoken-English answers
 | v2 | + attention pooling over WavLM frames | 0.3507 |
 | Stack | duration-aware Ridge stack | 0.3440 |
 | Stack + Whisper layers (`final_stack_w`) | + SVR on Whisper-large-v3 encoder layers 29–31 | 0.3432 |
-| Alternative (`final_stack_pw`) | + Ridge on prosody, timing, lexical and syntax features | lower than 0.3432 |
+| Alternative (`final_stack_pw`) | + Ridge on prosody, timing, lexical and syntax features | 0.3493 |
 | **Final** (`final_stack_wj`) | **+ Ridge on a local LLM judge's grammar ratings (Qwen3.5-9B via Ollama)** | **0.3362** |
+| Second selection (`final_stack_wj2`) | judge anchored with 8 human-scored training answers | 0.3387 |
 
-| On the 732 non-zero training clips | `final_stack_wj` (final) | `final_stack_w` (fallback) |
+The two final selections on Kaggle:
+
+| On the 732 non-zero training clips | `final_stack_wj` (best public score) | `final_stack_wj2` (best CV) |
 |---|---|---|
-| **Training (in-sample) RMSE** | 0.149 | 0.137 |
+| **Training (in-sample) RMSE** | 0.149 | 0.150 |
 | **Nested cross-validated RMSE** | 0.463 | 0.464 |
-| Nested CV, short clips (< 50 s) | 0.507 | 0.505 |
-| Prompt-held-out CV gain from the judge | +0.0044 (7/8 splits) | — |
-| Public leaderboard | **0.3362** | 0.3432 |
+| Judge's correlation with human score | 0.572 (zero-shot) | 0.592 (anchored) |
+| Paired CV vs the other (24 comparisons) | — | wins 24/24 (+0.002) |
+| Public leaderboard | **0.3362** | 0.3387 |
 
 The LLM judge was neutral in random-fold CV but improved **prompt-held-out CV**, and the public
-leaderboard confirmed it. A zero-shot judge rates grammar without having seen the prompt, which
-matters because about half the test answers prompts that are rare or absent in training. Both
-files are selected on Kaggle for the private ranking.
+leaderboard confirmed it (0.3432 → 0.3362). A zero-shot judge rates grammar without having seen
+the prompt, which matters because about half the test answers prompts that are rare or absent in
+training. The anchored judge is better by every CV scheme but 0.0025 lower on the ~130 public
+clips (within noise), so both are selected for the private ranking.
 
 The training/CV gap is expected: SVRs on thousands of embedding dimensions nearly memorise
 769 clips. Every model choice was made on cross-validation, never on training error.

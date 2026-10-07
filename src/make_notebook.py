@@ -78,8 +78,9 @@ plt.rcParams.update({"figure.dpi": 110, "axes.spines.top": False, "axes.spines.r
 PLOTS = ROOT / "plots"; PLOTS.mkdir(exist_ok=True)
 
 FINAL = "final_stack_wj"     # final model: 6 components + local LLM-judge component (LB 0.3362)
-ALT = "final_stack_w"        # previous best (LB 0.3432), kept selected as a fallback
-LB = {"final_stack_wj": "0.3362", "final_stack_w": "0.3432", "final_stack_pw": "lower than 0.3432"}
+ALT = "final_stack_wj2"      # second final selection: anchored judge (best CV on all schemes)
+LB = {"final_stack_wj": "0.3362", "final_stack_wj2": "0.3387", "final_stack_w": "0.3432",
+      "final_stack_pw": "0.3493"}
 STACK_COMPONENTS = ["svr_all", "svr_wavlm_large", "ridge_deb_hand_dz", "ft_roberta",
                     "attnpool_wavlmL", "svr_whisperL29_31", "ridge_llm9b_dz", "ridge_r2w_dz"]
 
@@ -316,7 +317,7 @@ print(f"Ridge alpha: {rep['alpha']:.2f}")
 print(f"nested CV RMSE (non-zero): {rep['nested_rmse_nz']:.4f} | short clips: {rep['nested_rmse_short']:.4f}"
       f" | long clips: {rep['nested_rmse_long']:.4f}")
 alt = json.loads((ROOT / "cache" / f"{ALT}_report.json").read_text())
-print(f"previous best {ALT} (LB {LB[ALT]}): nested {alt['nested_rmse_nz']:.4f} | "
+print(f"second selection {ALT} (LB {LB[ALT]}): nested {alt['nested_rmse_nz']:.4f} | "
       f"short clips {alt['nested_rmse_short']:.4f} | training {alt['train_insample']['rmse_nz']:.4f}")
 pd.Series(rep["coef"]).round(3).to_frame("Ridge coefficient")
 """)
@@ -451,13 +452,16 @@ md(r"""
 | v2 | + attention pooling over WavLM frames | 0.3507 |
 | stack | duration-aware Ridge stack | 0.3440 |
 | stack + Whisper L29–31 (`final_stack_w`) | + SVR on Whisper's upper encoder layers | 0.3432 |
-| alternative (`final_stack_pw`) | + Ridge on pitch, energy, pause, tempo, lexical and syntax features (best random-fold CV) | lower than 0.3432 |
+| alternative (`final_stack_pw`) | + Ridge on pitch, energy, pause, tempo, lexical and syntax features | 0.3493 |
 | **+ local LLM judge (`final_stack_wj`, final)** | **+ Ridge on Qwen3.5-9B grammar judgements** | **0.3362** |
+| anchored judge (`final_stack_wj2`, second selection) | judge shown 8 human-scored training answers first (r 0.572 → 0.592) | 0.3387 |
 
 The LLM-judge gain was invisible in random-fold CV (−0.0002) but visible in **prompt-held-out
 CV (+0.0044, 7/8 splits)**, and the public leaderboard confirmed it. A zero-shot judge rates
 grammar without having seen the prompt, which is exactly what the test (half unseen prompts)
-needs. `final_stack_wj` and `final_stack_w` are both selected for the private ranking.
+needs. The anchored version won all 24 paired CV comparisons (random, prompt-held-out and
+speaker-grouped; +0.002 each) but scored 0.0025 lower on the ~130 public clips, well within
+public-leaderboard noise. Both are selected for the private ranking: best public score and best CV.
 
 **Conclusions**
 * Frozen self-supervised **speech representations** are the strongest signal (WavLM-large
